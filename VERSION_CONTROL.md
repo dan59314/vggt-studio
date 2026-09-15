@@ -65,5 +65,17 @@ dotnet build VGGT.WinForms/VGGT.WinForms.csproj -c Release
 與 VGGT repository 的完整路徑。部分驗證需要另外準備影像／推估快取。
 使用者配置存於 LocalAppData/VGGT Studio，亦不屬於原始碼版本管理。
 
-目前僅有本機 Git 儲存庫；這能回復原始碼版本，但不是異機備份。
-之後可另行設定私人遠端儲存庫。
+## GitHub 私人遠端備份
+
+遠端： https://github.com/dan59314/vggt-studio
+本機 `origin` 已指向此私人儲存庫，`master` 追蹤 `origin/master`。
+目前基準提交與 `v0.1.0` 標籤已備份。
+
+每次提交後，執行以下指令同步提交與附註標籤：
+
+```powershell
+git push --follow-tags
+```
+
+Git 不會自動備份尚未提交或被忽略的檔案。模型、私人影像、輸出結果及
+使用者設定仍需另行備份。此處未設定排程或背景自動推送。
