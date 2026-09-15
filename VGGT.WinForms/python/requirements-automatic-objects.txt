@@ -1,0 +1,2 @@
+# Uses the same torch/torchvision GPU runtime as VGGT; do not replace it.
+segment-anything==1.0

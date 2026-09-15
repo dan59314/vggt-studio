@@ -1,0 +1,36 @@
+# Local runtime, downloaded third-party repository and models
+/VGGT.Runtime/
+/.vs/
+**/bin/
+**/obj/
+**/__pycache__/
+*.pyc
+*.user
+*.suo
+*.log
+.env
+.env.*
+!.env.example
+
+# Personal input media and generated reconstruction data
+/VGGT.WinForms/Images/
+*.glb
+*.ply
+*.npz
+*.pth
+*.pt
+*.onnx
+
+# Keep validation source, not machine-specific inputs/results
+/validation/**
+!/validation/**/
+!/validation/**/*.cs
+!/validation/**/*.csproj
+!/validation/**/*.py
+!/validation/DepthPreviewSmoke/settings.json
+
+# Always exclude IDE/build outputs after validation allow-list
+**/.vs/
+**/bin/
+**/obj/
+**/__pycache__/
