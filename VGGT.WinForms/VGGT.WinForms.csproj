@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="python\**\*" Exclude="python\**\__pycache__\**;python\test_*.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Samples\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

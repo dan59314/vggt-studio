@@ -80,11 +80,18 @@ def run(cache, output, settings, mesh=False):
         result['processingSettings']=settings
         result['shapes'].pop('mesh',None)
         if mesh:
-            print('PROGRESS|55|依目前點雲建立網格與貼圖',flush=True)
+            print('PROGRESS|55|依目前點雲建立融合網格',flush=True)
             paths=[c['image'] for c in result['cameras']]
-            stats=build_photo_mesh(points,colors,data['depth_conf'],settings['confidence'],settings['maxFaces'],output/'scene_mesh.glb',
-                data['image_valid_mask'] if subject is None else data['image_valid_mask'] & subject,
-                depth,paths,result.get('preprocessMode','crop'),prepared_valid=valid,texture_size=settings['textureSize'])
+            if result.get('autoSubject'):
+                from tsdf_mesh import build_tsdf_mesh
+                stats=build_tsdf_mesh(depth,colors,data['intrinsic'],data['extrinsic'],valid,
+                    settings['maxFaces'],output/'scene_mesh.glb')
+                result['meshMethod']='TSDF fused object'
+            else:
+                stats=build_photo_mesh(points,colors,data['depth_conf'],settings['confidence'],settings['maxFaces'],output/'scene_mesh.glb',
+                    data['image_valid_mask'] if subject is None else data['image_valid_mask'] & subject,
+                    depth,paths,result.get('preprocessMode','crop'),prepared_valid=valid,texture_size=settings['textureSize'])
+                result['meshMethod']='Per-view photo mesh'
             result['meshGlbPath']='scene_mesh.glb';result['shapes']['mesh']=list(stats[:2])
             project,animation=export_viewer(output,data['extrinsic'],data['intrinsic'],depth.shape[1],paths,'scene_mesh.glb',
                 times=result.get('videoTimeline',{}).get('times') if result.get('videoTimeline') else None)
@@ -94,12 +101,17 @@ def run(cache, output, settings, mesh=False):
             (output/'textures').mkdir()
             vertices=[];faces=[];offset=0
             for view_index,item in enumerate(scene.geometry.values()):
-                item.visual.material.baseColorTexture.save(output/'textures'/f'texture_{view_index+1:03d}.png')
-                uv=item.visual.uv;image=np.asarray(item.visual.material.baseColorTexture)
-                px=np.clip((uv[:,0]*image.shape[1]).astype(int),0,image.shape[1]-1)
-                py=np.clip(((1-uv[:,1])*image.shape[0]).astype(int),0,image.shape[0]-1)
+                texture=getattr(getattr(item.visual,'material',None),'baseColorTexture',None)
+                if texture is not None and getattr(item.visual,'uv',None) is not None:
+                    texture.save(output/'textures'/f'texture_{view_index+1:03d}.png')
+                    uv=item.visual.uv;image=np.asarray(texture)
+                    px=np.clip((uv[:,0]*image.shape[1]).astype(int),0,image.shape[1]-1)
+                    py=np.clip(((1-uv[:,1])*image.shape[0]).astype(int),0,image.shape[0]-1)
+                    rgb_preview=image[py,px,:3]
+                else:
+                    rgb_preview=np.asarray(item.visual.vertex_colors)[:,:3]
                 positions=item.vertices.copy();positions[:,2]*=-1
-                vertices.extend(np.column_stack([positions,image[py,px,:3]]).tolist())
+                vertices.extend(np.column_stack([positions,rgb_preview]).tolist())
                 faces.extend((item.faces+offset).tolist());offset+=len(positions)
             (output/'mesh_preview.json').write_text(json.dumps(dict(vertices=vertices,faces=faces)),encoding='utf-8')
         if result.get('videoTimeline'):

@@ -20,6 +20,7 @@ public partial class MainForm
     private readonly Button _quickRun = new() { Text="開始快速推估", AutoSize=true };
     private readonly Button _apply = new() { Text="套用並更新點雲", AutoSize=true };
     private readonly Button _buildMesh = new() { Text="建立／更新網格預覽", AutoSize=true };
+    private readonly Button _buildOrbitObject = new() { Text="一鍵建立環繞物體模型", AutoSize=true };
     private readonly Button _exportGlb = new() { Text="匯出 GLB…", AutoSize=true };
     private readonly Button _exportProject = new() { Text="匯出 Viewer 專案與路徑…", AutoSize=true };
     private readonly ComboBox _resultChoice = new() { DropDownStyle=ComboBoxStyle.DropDownList, Width=160 };
@@ -73,6 +74,9 @@ public partial class MainForm
         Buttons(input,btnRemove,btnClear,Button("上移",()=>MoveInput(-1)),Button("下移",()=>MoveInput(1)));
         input.Controls.Add(_inputStatus);Buttons(input,Button("執行環境／輸出位置…",EditEnvironment));
         InitializeSubjectSelection(input);
+        Buttons(input,_buildOrbitObject);
+        input.Controls.Add(new Label { Text="自動選取中央主體、使用全部關鍵影格推估，並以多視角 TSDF 建立單一 Mesh。",AutoSize=true,MaximumSize=new Size(400,0) });
+        _buildOrbitObject.Click+=async(_,_)=>await BuildOrbitObjectAsync();
         var quick=Group("② 快速推估");
         Row(quick,"代表影像數（均勻選取）",_quickCount);Buttons(quick,_quickRun);
         quick.Controls.Add(new Label { Text="先用少量視角檢查場景，不產生 GLB。",AutoSize=true });
@@ -112,6 +116,21 @@ public partial class MainForm
         _workflowReady=true;RefreshWorkflow();
     }
 
+    private async Task BuildOrbitObjectAsync()
+    {
+        if(_videoSelection is null||lstImages.Items.Count<2)
+        {
+            MessageBox.Show(this,"請先匯入環繞物體影片；程式首次開啟時會自動載入內建杯子影片。");return;
+        }
+        _videoSelection.CaptureMode="orbit";
+        lblStatus.Text="正在自動建立環繞物體模型：主體遮罩 → VGGT → 多視角融合。";
+        await RunWorkflowAsync(false);
+        if(_cacheDirectory is null||_inputDirty||_result is null)return;
+        await ProcessWorkflowAsync(true);
+        if(_lastGlbPath is not null&&File.Exists(_lastGlbPath))
+            lblStatus.Text="環繞物體模型已完成；可預覽或由「檔案 → 輸出 → GLB 模型」另存。";
+    }
+
     private string Parameters() => JsonSerializer.Serialize(new { confidence=(double)nudConfidence.Value,near=(double)_nearDepth.Value,far=(double)_farDepth.Value,
         components=(int)_components.Value,smooth=(int)_smooth.Value,holeArea=(int)_holeArea.Value,maxPoints=(int)nudMaxPoints.Value,maxFaces=(int)nudMaxFaces.Value,textureSize=(int)_textureSize.Value,subjectMasks=ActiveSubjectMasks });
     private string PointParameters() => JsonSerializer.Serialize(new { confidence=(double)nudConfidence.Value,near=(double)_nearDepth.Value,far=(double)_farDepth.Value,
@@ -126,6 +145,7 @@ public partial class MainForm
         foreach(var group in _workflowGroups)group.Enabled=!busy;
         btnCancel.Enabled=busy;_resultChoice.Enabled=!busy;_viewChoice.Enabled=!busy;
         _quickRun.Enabled=!busy&&lstImages.Items.Count>0;btnRun.Enabled=_quickRun.Enabled;
+        _buildOrbitObject.Enabled=!busy&&_videoSelection is not null&&lstImages.Items.Count>=2;
         _apply.Enabled=!busy&&has&&!_inputDirty;
         _depthInspect.Enabled=!busy&&has&&!_inputDirty;
         bool applied=has&&_appliedParameters==PointParameters()&&!_inputDirty;
@@ -177,8 +197,9 @@ public partial class MainForm
         try
         {
             ValidateSubjectCoverage(images);
+            bool autoSubject=_videoSelection?.CaptureMode=="orbit"&&!_subjectOnly.Checked;
             var options=new VggtRunOptions(txtPython.Text,txtRepo.Text,txtModel.Text,images,output,0,(int)nudMaxPoints.Value,(int)nudMaxFaces.Value,
-                string.IsNullOrWhiteSpace(txtQuery.Text)?null:txtQuery.Text,true,true,false,times,_videoSelection?.VideoPath);
+                string.IsNullOrWhiteSpace(txtQuery.Text)?null:txtQuery.Text,true,true,false,times,_videoSelection?.VideoPath,autoSubject);
             var result=await _service.RunAsync(options,s=>BeginInvoke(()=>AppendLog(s)),(v,s)=>BeginInvoke(()=>{progress.Value=Math.Clamp(v,0,100);lblStatus.Text=s;}),_runCts.Token);
             _cacheDirectory=output;_quality=quick?"快速結果":"高品質結果";_result=result;
             _activeInputs=InputSignature();_inputDirty=false;_appliedParameters=null;_meshParameters=null;

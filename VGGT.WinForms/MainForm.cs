@@ -35,7 +35,46 @@ public partial class MainForm : Form
         InitializeFileMenu();
         InitializeContextHelp();
         InitializeWindowLayout();
+        Shown += async (_, _) => await LoadDefaultOrbitSampleAsync();
 
+    }
+
+    private async Task LoadDefaultOrbitSampleAsync()
+    {
+        if (lstImages.Items.Count > 0 || _runCts is not null) return;
+        string video = Path.Combine(AppContext.BaseDirectory, "Samples", "ObjectronCup", "default-orbit.mp4");
+        if (!File.Exists(video)) { AppendLog("找不到內建 Objectron 環繞測試影片。"); return; }
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VGGT Studio", "DefaultSamples", "ObjectronCup-v1");
+        try
+        {
+            VideoFrames? sample = null;
+            string manifest = Path.Combine(root, "video_frames.json");
+            if (File.Exists(manifest))
+            {
+                sample = JsonSerializer.Deserialize<VideoFrames>(await File.ReadAllTextAsync(manifest),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (sample is null || sample.Frames.Count < 2 || sample.Frames.Any(f => !File.Exists(f.Path))) sample = null;
+            }
+            if (sample is null)
+            {
+                string output = Directory.Exists(root) ? root + "-" + DateTime.Now.ToString("yyyyMMddHHmmss") : root;
+                lblStatus.Text = "正在分析內建環繞測試影片…";
+                sample = await VideoFrameService.ExtractAsync(txtPython.Text, video, output, 0, 0, .5m, 12,
+                    "orbit", "quick", "ffmpeg", AppendLog, CancellationToken.None);
+            }
+            if (lstImages.Items.Count > 0) return;
+            AddImages(sample.Frames.Select(f => f.Path));
+            _videoSelection = sample;
+            InputChanged();
+            lblStatus.Text = "已載入內建 Objectron 杯子環繞影片；可直接開始快速推估。";
+            AppendLog($"已自動載入預設環繞影片：{sample.VideoPath}；{sample.Frames.Count} 張智慧關鍵影格。");
+        }
+        catch (Exception ex)
+        {
+            lblStatus.Text = "預設影片載入失敗；仍可從檔案選單匯入自己的影片。";
+            AppendLog("預設環繞影片載入失敗：" + ex.Message);
+        }
     }
 
     private void ImportVideo()

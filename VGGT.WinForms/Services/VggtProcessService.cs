@@ -8,7 +8,7 @@ public sealed record VggtRunOptions(
     string PythonExe, string RepoPath, string ModelId, IReadOnlyList<string> Images,
     string OutputDirectory, double ConfidencePercentile, int MaxPoints, int MaxMeshFaces,
     string? QueryPointsCsv, bool SaveDenseArrays, bool UseDepthAndCamera, bool GenerateMesh,
-    double[]? FrameTimes = null, string? VideoPath = null);
+    double[]? FrameTimes = null, string? VideoPath = null, bool AutoSubject = false);
 
 public sealed class VggtResult
 {
@@ -101,6 +101,7 @@ public sealed class VggtProcessService
         if (options.SaveDenseArrays) psi.ArgumentList.Add("--save-dense");
         if (options.UseDepthAndCamera) psi.ArgumentList.Add("--depth-camera-points");
         if (options.GenerateMesh) psi.ArgumentList.Add("--generate-mesh");
+        if (options.AutoSubject) psi.ArgumentList.Add("--auto-subject");
         if (options.FrameTimes is not null)
         {
             string timelinePath = Path.Combine(options.OutputDirectory, "video_timeline.json");

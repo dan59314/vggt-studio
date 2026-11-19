@@ -61,6 +61,7 @@ public partial class MainForm
         Parameter(nudMaxFaces,"Mesh 面數上限"," 面","限制三角形數量。降低會使用較粗網格；提高可保留更多幾何細節，但不會增加照片細節。","只需「建立／更新網格預覽」，不用重新套用點雲或執行 AI。");
         Parameter(_textureSize,"貼圖最長邊"," 像素","每張 GLB 貼圖的最大邊長。大圖會縮小，小圖不放大；提高可能讓貼圖更清晰，也增加檔案大小。","只需更新網格。中央為幾何預覽，完整貼圖請開啟 GLB。");
         _controlHelp[_quickRun]=()=>["【開始快速推估】","使用指定數量的代表影像，執行 AI、快取原始預測，再套用點雲參數；不自動建立 GLB。",RunHelp()];
+        _controlHelp[_buildOrbitObject]=()=>["【一鍵建立環繞物體模型】","自動使用完整關鍵影格、SAM 中央主體遮罩、VGGT 深度與相機，再以跨視角一致性和 TSDF 融合建立單一 GLB。","適用相機繞著靜止物體拍攝的影片；背景只協助相機估計，不會進入最後模型。",RunHelp()];
         _controlHelp[btnRun]=()=>["【使用全部影像重建】",$"目前清單共 {lstImages.Items.Count} 張。使用全部視角重新推估，再套用目前參數。","仍使用同一 VGGT 解析度；更多視角不保證更好，也更占顯存。",RunHelp()];
         _controlHelp[_apply]=()=>["【套用並更新點雲】","以快取執行篩選、清理、平滑與補洞；不重跑 AI。更新後舊網格需重新建立。",_runCts is not null?"目前工作執行中，請等待或取消。":_parameterStatus.Text];
         _controlHelp[_buildMesh]=()=>["【建立／更新網格預覽】","依已套用的點雲和面數／貼圖設定建立 GLB 快取。完成後再由「檔案 → 輸出」另存。",_runCts is not null?"目前工作執行中，請等待或取消。":_meshStatus.Text];

@@ -142,6 +142,7 @@ def main() -> int:
     ap.add_argument("--save-dense", action="store_true")
     ap.add_argument("--depth-camera-points", action="store_true")
     ap.add_argument("--generate-mesh", action="store_true")
+    ap.add_argument("--auto-subject", action="store_true")
     args = ap.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -157,6 +158,12 @@ def main() -> int:
         if len(times) != len(image_paths) or not all(math.isfinite(t) for t in times) or any(b <= a for a, b in zip(times, times[1:])):
             raise ValueError("影片時間與影像數量不符或不是遞增時間。")
         (out / "video_timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    auto_subject_manifest = None
+    if args.auto_subject:
+        progress(2, "自動辨識環繞影片主體")
+        from auto_subject import generate as generate_auto_subject
+        auto_subject_manifest = generate_auto_subject(image_paths, out / "auto_subject")
 
     progress(4, "載入 PyTorch 與 VGGT")
     import numpy as np
@@ -183,6 +190,10 @@ def main() -> int:
     # black or white surfaces as padding from their pixel colors.
     from photo_mesh import content_mask
     image_mask = np.stack([content_mask(path, *images.shape[-2:], args.image_mode) for path in image_paths])
+    if auto_subject_manifest is not None:
+        from subject_masks import aligned_masks
+        mapping = {item['image']: item['mask'] for item in auto_subject_manifest['masks']}
+        image_mask &= aligned_masks(image_paths, mapping, *images.shape[-2:], args.image_mode)
     query = None
     if args.query_points:
         query_np = np.loadtxt(args.query_points, delimiter=",", dtype=np.float32, ndmin=2)
@@ -240,10 +251,16 @@ def main() -> int:
     if args.generate_mesh:
         progress(73, "建立三角 Mesh 並輸出 GLB")
         mesh_path = out / "scene_mesh.glb"
-        mesh_stats = build_grid_mesh(chosen, images_np, chosen_conf,
-                                     args.confidence_percentile, args.max_mesh_faces, mesh_path,
-                                     image_mask=image_mask, depth=depth[..., 0], source_images=image_paths,
-                                     preprocess_mode=args.image_mode)
+        if auto_subject_manifest is not None:
+            from tsdf_mesh import build_tsdf_mesh
+            mesh_stats = build_tsdf_mesh(depth[...,0],images_np,intrinsic_np,extrinsic_np,
+                                         confidence_mask(chosen,chosen_conf,image_mask,args.confidence_percentile),
+                                         args.max_mesh_faces,mesh_path)
+        else:
+            mesh_stats = build_grid_mesh(chosen, images_np, chosen_conf,
+                                         args.confidence_percentile, args.max_mesh_faces, mesh_path,
+                                         image_mask=image_mask, depth=depth[..., 0], source_images=image_paths,
+                                         preprocess_mode=args.image_mode)
         print(f"Mesh: {mesh_stats[0]} vertices, {mesh_stats[1]} faces, grid stride {mesh_stats[2]}", flush=True)
 
     progress(82, "輸出深度預覽與相機資料")
@@ -281,6 +298,7 @@ def main() -> int:
         "cameraAnimationPath": animation_name,
         "videoTimeline": timeline,
         "preprocessMode": args.image_mode,
+        "autoSubject": auto_subject_manifest is not None,
         "meshGlbPath": mesh_path.name if mesh_path else None,
         "denseArrayPath": dense_path.name if dense_path else None,
         "runtime": {"device": "cuda:0", "gpu": gpu_name, "pytorch": torch.__version__,

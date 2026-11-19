@@ -16,6 +16,8 @@ internal static class Program
             throw new Exception("Capture modes or quality presets missing");
         using var main = new MainForm();
         main.CreateControl(); main.PerformLayout();
+        if (Descendants(main).OfType<Button>().All(x => x.Text != "一鍵建立環繞物體模型"))
+            throw new Exception("One-click orbit reconstruction button missing");
         if (main.MainMenuStrip?.Items[0] is not ToolStripMenuItem file ||
             file.DropDownItems.OfType<ToolStripMenuItem>().All(x => x.Text != "輸入"))
             throw new Exception("Video menu missing");
