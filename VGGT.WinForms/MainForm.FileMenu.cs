@@ -13,6 +13,7 @@ public partial class MainForm
         input.DropDownItems.Add("照片…",null,btnAddImages_Click);
         input.DropDownItems.Add("資料夾…",null,btnAddFolder_Click);
         input.DropDownItems.Add("影片抽幀與預覽…",null,(_,_)=>ImportVideo());
+        input.DropDownItems.Add("載入預設範例（杯子影片）",null,async(_,_)=>await LoadDefaultOrbitSampleAsync(true));
         _fileOutput=new ToolStripMenuItem("輸出");
         void Item(string text,Action action,bool mesh=false)
         {

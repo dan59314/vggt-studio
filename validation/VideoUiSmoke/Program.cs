@@ -18,9 +18,14 @@ internal static class Program
         main.CreateControl(); main.PerformLayout();
         if (Descendants(main).OfType<Button>().All(x => x.Text != "一鍵建立環繞物體模型"))
             throw new Exception("One-click orbit reconstruction button missing");
+        if (Descendants(main).OfType<Button>().All(x => x.Text != "載入預設範例（杯子影片）"))
+            throw new Exception("Default cup sample button missing");
         if (main.MainMenuStrip?.Items[0] is not ToolStripMenuItem file ||
             file.DropDownItems.OfType<ToolStripMenuItem>().All(x => x.Text != "輸入"))
             throw new Exception("Video menu missing");
+        var input = file.DropDownItems.OfType<ToolStripMenuItem>().Single(x => x.Text == "輸入");
+        if (input.DropDownItems.OfType<ToolStripMenuItem>().All(x => x.Text != "載入預設範例（杯子影片）"))
+            throw new Exception("Default cup sample menu missing");
         Console.WriteLine("Both forms constructed and laid out; video input menu present.");
     }
 

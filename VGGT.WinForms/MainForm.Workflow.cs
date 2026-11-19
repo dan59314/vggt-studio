@@ -20,6 +20,7 @@ public partial class MainForm
     private readonly Button _quickRun = new() { Text="開始快速推估", AutoSize=true };
     private readonly Button _apply = new() { Text="套用並更新點雲", AutoSize=true };
     private readonly Button _buildMesh = new() { Text="建立／更新網格預覽", AutoSize=true };
+    private readonly Button _loadDefaultSample = new() { Text="載入預設範例（杯子影片）", AutoSize=true };
     private readonly Button _buildOrbitObject = new() { Text="一鍵建立環繞物體模型", AutoSize=true };
     private readonly Button _exportGlb = new() { Text="匯出 GLB…", AutoSize=true };
     private readonly Button _exportProject = new() { Text="匯出 Viewer 專案與路徑…", AutoSize=true };
@@ -68,6 +69,8 @@ public partial class MainForm
         Button Button(string text,Action action) { var b=new Button { Text=text,AutoSize=true }; b.Click+=(_,_)=>action();return b; }
         var input=Group("① 輸入資料");
         Buttons(input,btnAddImages,btnAddFolder,Button("影片抽幀…",ImportVideo));
+        Buttons(input,_loadDefaultSample);
+        _loadDefaultSample.Click+=async(_,_)=>await LoadDefaultOrbitSampleAsync(true);
         lstImages.Dock=DockStyle.None;lstImages.Size=new Size(400,145);input.Controls.Add(lstImages);
         lstImages.FormattingEnabled=true;
         lstImages.Format+=(_,e)=> { if(e.ListItem is string path)e.Value=Path.GetFileName(path); };

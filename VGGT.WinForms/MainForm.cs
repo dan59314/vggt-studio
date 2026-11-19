@@ -39,13 +39,16 @@ public partial class MainForm : Form
 
     }
 
-    private async Task LoadDefaultOrbitSampleAsync()
+    private async Task LoadDefaultOrbitSampleAsync(bool replaceExisting = false)
     {
-        if (lstImages.Items.Count > 0 || _runCts is not null) return;
-        string video = Path.Combine(AppContext.BaseDirectory, "Samples", "ObjectronCup", "default-orbit.mp4");
-        if (!File.Exists(video)) { AppendLog("找不到內建 Objectron 環繞測試影片。"); return; }
+        if ((!replaceExisting && lstImages.Items.Count > 0) || _runCts is not null) return;
+        string downloadedCup = Path.Combine(AppContext.BaseDirectory, "Samples", "TGlobal_Cup.mp4");
+        string objectronCup = Path.Combine(AppContext.BaseDirectory, "Samples", "ObjectronCup", "default-orbit.mp4");
+        string video = File.Exists(downloadedCup) ? downloadedCup : objectronCup;
+        if (!File.Exists(video)) { AppendLog("找不到預設杯子環繞測試影片。"); return; }
+        string sampleName = Path.GetFileNameWithoutExtension(video);
         string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "VGGT Studio", "DefaultSamples", "ObjectronCup-v1");
+            "VGGT Studio", "DefaultSamples", sampleName + "-v1");
         try
         {
             VideoFrames? sample = null;
@@ -63,12 +66,13 @@ public partial class MainForm : Form
                 sample = await VideoFrameService.ExtractAsync(txtPython.Text, video, output, 0, 0, .5m, 12,
                     "orbit", "quick", "ffmpeg", AppendLog, CancellationToken.None);
             }
-            if (lstImages.Items.Count > 0) return;
+            if (!replaceExisting && lstImages.Items.Count > 0) return;
+            if (replaceExisting) lstImages.Items.Clear();
             AddImages(sample.Frames.Select(f => f.Path));
             _videoSelection = sample;
             InputChanged();
-            lblStatus.Text = "已載入內建 Objectron 杯子環繞影片；可直接開始快速推估。";
-            AppendLog($"已自動載入預設環繞影片：{sample.VideoPath}；{sample.Frames.Count} 張智慧關鍵影格。");
+            lblStatus.Text = $"已載入預設杯子影片 {Path.GetFileName(video)}；可直接一鍵建立模型。";
+            AppendLog($"已載入預設杯子影片：{sample.VideoPath}；{sample.Frames.Count} 張智慧關鍵影格。");
         }
         catch (Exception ex)
         {
