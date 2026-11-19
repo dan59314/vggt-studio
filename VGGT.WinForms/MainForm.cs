@@ -49,7 +49,12 @@ public partial class MainForm : Form
         AddImages(preview.Selection.Frames.Select(f => f.Path));
         _videoSelection = preview.Selection;
         InputChanged();
-        AppendLog($"影片：{_videoSelection.VideoPath}；已選取 {_videoSelection.Frames.Count} 張，Camera 路徑保留影片時間間隔。");
+        string mode = _videoSelection.CaptureMode switch { "orbit" => "主體環繞", "walkthrough" => "場景走拍", _ => "自動判斷" };
+        AppendLog($"影片：{_videoSelection.VideoPath}；模式 {mode}；品質 {_videoSelection.Quality}；" +
+            $"已選取 {_videoSelection.Frames.Count} 張，Camera 路徑保留影片時間間隔。");
+        if (_videoSelection.Report is { } report)
+            AppendLog($"影片品質：{report.QualityGrade}；分析 {report.AnalyzedFrames} 張；低重疊 {report.LowOverlapSegments} 段。" +
+                (report.Warnings.Count > 0 ? " " + string.Join(" ", report.Warnings) : ""));
     }
 
     private void RestoreImageList()

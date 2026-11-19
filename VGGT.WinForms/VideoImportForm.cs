@@ -6,20 +6,24 @@ public sealed class VideoImportForm : Form
 {
     private readonly string _python;
     private readonly string _video;
-    private readonly NumericUpDown _start = new() { Maximum = 119, DecimalPlaces = 1 };
-    private readonly NumericUpDown _end = new() { Minimum = .1m, Maximum = 120, Value = 30, DecimalPlaces = 1 };
+    private readonly NumericUpDown _start = new() { Maximum = 86400, DecimalPlaces = 1 };
+    private readonly NumericUpDown _end = new() { Maximum = 86400, Value = 0, DecimalPlaces = 1 };
     private readonly NumericUpDown _interval = new() { Minimum = .1m, Maximum = 120, Value = 1, DecimalPlaces = 1 };
-    private readonly NumericUpDown _limit = new() { Minimum = 2, Maximum = 32, Value = 4 };
+    private readonly NumericUpDown _limit = new() { Minimum = 0, Maximum = 1000, Value = 0 };
+    private readonly ComboBox _mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
+    private readonly ComboBox _quality = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100 };
     private readonly TextBox _ffmpeg = new() { Text = "ffmpeg", Width = 250 };
     private readonly Button _extract = new() { Text = "擷取／重新擷取", AutoSize = true };
     private readonly Button _accept = new() { Text = "使用勾選影格（取代清單）", AutoSize = true, Enabled = false };
     private readonly Label _status = new() { AutoSize = true, Text = "先擷取影格，再取消勾選模糊或重複畫面。" };
+    private readonly TextBox _report = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, Height = 92, ScrollBars = ScrollBars.Vertical };
     private readonly ListView _frames = new() { Dock = DockStyle.Fill, View = View.LargeIcon, CheckBoxes = true, MultiSelect = false };
     private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(25,25,25) };
     private readonly ImageList _thumbnails = new() { ImageSize = new Size(160, 100), ColorDepth = ColorDepth.Depth32Bit };
     private readonly CancellationTokenSource _cts = new();
     private bool _busy;
     private bool _closeRequested;
+    private VideoFrames? _analysis;
     public VideoFrames? Selection { get; private set; }
 
     public VideoImportForm(string python, string video)
@@ -28,19 +32,24 @@ public sealed class VideoImportForm : Form
         Text = "影片影格預覽 — " + Path.GetFileName(video);
         Size = new Size(1050, 740); MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterParent;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+        _mode.Items.AddRange(["自動判斷", "主體環繞", "場景走拍"]); _mode.SelectedIndex = 0;
+        _quality.Items.AddRange(["快速", "平衡", "高品質"]); _quality.SelectedIndex = 0;
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5 };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(8) };
         void Field(string text, Control control) { options.Controls.Add(new Label { Text = text, AutoSize = true, Margin = new Padding(8) }); options.Controls.Add(control); }
-        Field("起點（秒）", _start); Field("終點（秒）", _end); Field("間隔（秒）", _interval); Field("最多影格", _limit);
+        Field("拍攝模式", _mode); Field("品質", _quality);
+        Field("起點（秒）", _start); Field("終點（0＝完整影片）", _end);
+        Field("分析間隔（秒）", _interval); Field("影格數（0＝自動）", _limit);
         Field("FFmpeg", _ffmpeg);
         var browse = new Button { Text = "瀏覽…", AutoSize = true };
         browse.Click += (_, _) => { using var d = new OpenFileDialog { Filter = "FFmpeg|ffmpeg.exe" }; if (d.ShowDialog(this) == DialogResult.OK) _ffmpeg.Text = d.FileName; };
         options.Controls.Add(browse); options.Controls.Add(_extract);
-        options.Controls.Add(new Label { Text = "第一版支援前 120 秒；超過影格上限時均勻拉大間隔。顯存不足請減少影格。", AutoSize = true, Margin = new Padding(8) });
+        options.Controls.Add(new Label { Text = "程式會分析清晰度、曝光、特徵與相鄰重疊；可在分析後人工取消影格。", AutoSize = true, Margin = new Padding(8) });
         var split = new SplitContainer { Width = 1000, Dock = DockStyle.Fill, SplitterDistance = 400 };
         _frames.LargeImageList = _thumbnails;
         split.Panel1.Controls.Add(_frames); split.Panel2.Controls.Add(_preview);
@@ -51,7 +60,7 @@ public sealed class VideoImportForm : Form
         var cancel = new Button { Text = "取消" }; cancel.Click += (_, _) => Close();
         actions.Controls.AddRange([all, none, _accept, cancel]);
         layout.Controls.Add(options, 0, 0); layout.Controls.Add(split, 0, 1);
-        layout.Controls.Add(_status, 0, 2); layout.Controls.Add(actions, 0, 3);
+        layout.Controls.Add(_status, 0, 2); layout.Controls.Add(_report, 0, 3); layout.Controls.Add(actions, 0, 4);
         Controls.Add(layout);
         _extract.Click += Extract_Click;
         _frames.SelectedIndexChanged += (_, _) =>
@@ -61,20 +70,22 @@ public sealed class VideoImportForm : Form
             var frame = (VideoFrame)_frames.SelectedItems[0].Tag!;
             using var image = Image.FromFile(frame.Path);
             _preview.Image = new Bitmap(image);
-            _status.Text = $"{frame.TimeSeconds:0.000} 秒｜清晰度 {frame.Sharpness:0.0}｜與上一張差異 {frame.Difference?.ToString("0.0") ?? "—"}（分數僅供比較）";
+            _status.Text = $"{frame.TimeSeconds:0.000} 秒｜品質 {frame.Score:0.00}｜清晰度 {frame.Sharpness:0.0}｜" +
+                $"曝光 {frame.Exposure:P0}｜特徵 {frame.FeatureCount}｜重疊 {(frame.Overlap.HasValue ? frame.Overlap.Value.ToString("P0") : "—")}";
         };
         _accept.Click += (_, _) =>
         {
             var frames = _frames.CheckedItems.Cast<ListViewItem>().Select(i => (VideoFrame)i.Tag!).OrderBy(f => f.TimeSeconds).ToList();
             if (frames.Count < 2) { MessageBox.Show(this, "請至少保留兩張影格。"); return; }
-            Selection = new VideoFrames { VideoPath = _video, Frames = frames };
+            Selection = new VideoFrames { VideoPath = _video, Frames = frames,
+                CaptureMode = _analysis?.CaptureMode ?? ModeValue(), Quality = _analysis?.Quality ?? QualityValue(), Report = _analysis?.Report };
             DialogResult = DialogResult.OK; Close();
         };
     }
 
     private async void Extract_Click(object? sender, EventArgs e)
     {
-        if (_start.Value >= _end.Value) { MessageBox.Show(this, "終點必須大於起點。"); return; }
+        if (_end.Value > 0 && _start.Value >= _end.Value) { MessageBox.Show(this, "終點必須大於起點；使用完整影片請將終點設為 0。"); return; }
         _busy = true; _extract.Enabled = _accept.Enabled = false;
         _status.Text = "正在讀取影片並擷取影格…";
         try
@@ -82,8 +93,9 @@ public sealed class VideoImportForm : Form
             string cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "VGGT Studio", "VideoFrames", Guid.NewGuid().ToString("N"));
             var result = await VideoFrameService.ExtractAsync(_python, _video, cache, _start.Value, _end.Value,
-                _interval.Value, (int)_limit.Value, _ffmpeg.Text,
+                _interval.Value, (int)_limit.Value, ModeValue(), QualityValue(), _ffmpeg.Text,
                 line => BeginInvoke(() => _status.Text = line.Split('|').Last()), _cts.Token);
+            _analysis = result;
             _frames.Items.Clear(); _thumbnails.Images.Clear();
             foreach (var frame in result.Frames)
             {
@@ -96,14 +108,29 @@ public sealed class VideoImportForm : Form
                     graphics.DrawImage(image, (160-image.Width*scale)/2, (100-image.Height*scale)/2, image.Width*scale, image.Height*scale);
                 }
                 _thumbnails.Images.Add(thumbnail);
-                _frames.Items.Add(new ListViewItem($"{frame.TimeSeconds:0.000}s  清晰度 {frame.Sharpness:0}", _thumbnails.Images.Count-1) { Tag = frame, Checked = true });
+                _frames.Items.Add(new ListViewItem($"{frame.TimeSeconds:0.000}s  品質 {frame.Score:0.00}", _thumbnails.Images.Count-1) { Tag = frame, Checked = frame.Recommended });
             }
             _accept.Enabled = result.Frames.Count >= 2;
             _status.Text = $"已擷取 {result.Frames.Count} 張。勾選要重建的影格，點選可放大預覽。";
+            _report.Text = FormatReport(result);
         }
         catch (OperationCanceledException) { _status.Text = "已取消"; }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "影片擷取失敗"); }
         finally { _busy = false; _extract.Enabled = true; if (_closeRequested) Close(); }
+    }
+
+    private string ModeValue() => _mode.SelectedIndex switch { 1 => "orbit", 2 => "walkthrough", _ => "auto" };
+    private string QualityValue() => _quality.SelectedIndex switch { 1 => "balanced", 2 => "high", _ => "quick" };
+    private static string FormatReport(VideoFrames result)
+    {
+        var r = result.Report;
+        if (r is null) return "沒有品質報告。";
+        string inferred = r.InferredMode == "orbit" ? "主體環繞" : r.InferredMode == "walkthrough" ? "場景走拍" : "未判定";
+        string warning = r.Warnings.Count == 0 ? "未發現明顯問題。" : string.Join("\r\n", r.Warnings.Select(x => "• " + x));
+        string problemTimes = r.ProblemTimes.Count == 0 ? "" :
+            $"\r\n低重疊時間：{string.Join("、", r.ProblemTimes.Take(12).Select(x => x.ToString("0.0") + "s"))}";
+        return $"品質：{r.QualityGrade}｜{r.Width}×{r.Height}｜{r.DurationSeconds:0.0} 秒｜判定：{inferred}\r\n" +
+            $"分析 {r.AnalyzedFrames} 張，建議 {r.RecommendedFrames} 張；低重疊 {r.LowOverlapSegments} 段、曝光問題 {r.ExposureProblemFrames} 張、低紋理 {r.LowTextureFrames} 張。\r\n{warning}{problemTimes}";
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
